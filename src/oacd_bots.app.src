@@ -1,0 +1,12 @@
+{application, oacd_bots,
+ [
+  {description, ""},
+  {vsn, "1"},
+  {registered, []},
+  {applications, [
+                  kernel,
+                  stdlib
+                 ]},
+  {mod, { oacd_bots_app, []}},
+  {env, []}
+ ]}.
