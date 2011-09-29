@@ -34,7 +34,7 @@
 %% ===================================================================
 
 start_link(Freeswitch) when is_atom(Freeswitch) ->
-	start_link(Freeswitch, []) when is_atom(Freeswitch).
+	start_link(Freeswitch, []).
 
 start_link(Freeswitch, Options) ->
 	supervisor:start_link({local, ?MODULE}, ?MODULE, {Freeswitch, Options}). 
@@ -43,7 +43,7 @@ start_link(Freeswitch, Options) ->
 %% Supervisor callbacks
 %% ===================================================================
 
-init(Freeswitch, Options) ->
+init({Freeswitch, Options}) ->
 	FreeswitchManager = ?CHILD(oacd_bots_freeswitch_manager, worker, Freeswitch),
 	Callers = ?CHILD(oacd_bots_caller_manager, worker, []),
 	{ok, { {one_for_one, 5, 10}, [FreeswitchManager, Callers]} }.
