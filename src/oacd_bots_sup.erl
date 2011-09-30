@@ -44,7 +44,7 @@ start_link(Freeswitch, Options) ->
 %% ===================================================================
 
 init({Freeswitch, Options}) ->
-	FreeswitchManager = ?CHILD(oacd_bots_freeswitch_manager, worker, Freeswitch),
-	Callers = ?CHILD(oacd_bots_caller_manager, worker, []),
+	FreeswitchManager = ?CHILD(oacd_bots_freeswitch_manager, worker, [Freeswitch]),
+	Callers = ?CHILD(oacd_bots_caller_manager, worker, [Freeswitch]),
 	{ok, { {one_for_one, 5, 10}, [FreeswitchManager, Callers]} }.
 
