@@ -30,7 +30,7 @@
 %% ===================================================================
 
 start(_StartType, _StartArgs) ->
-		Freeswitch = application:get_env(oacd_bots, freeswitch),
+		{ok, Freeswitch} = application:get_env(oacd_bots, freeswitch),
     oacd_bots_sup:start_link(Freeswitch, []).
 
 stop(_State) ->
