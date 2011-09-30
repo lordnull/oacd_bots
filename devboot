@@ -77,7 +77,7 @@ do
 	let i=$i+1
 done
 
-if [[ $BOOT = '-boot rel/oacd_bots/releases/1/oacd_bots' ]] && [ ! -f "rel/oacd_bots/releases/1/oacd_bots" ]; then
+if [[ $BOOT = '-boot rel/oacd_bots/releases/1/oacd_bots' ]] && [ ! -f "rel/oacd_bots/releases/1/oacd_bots.boot" ]; then
 	./rebar generate
 fi
 
