@@ -18,7 +18,7 @@ function help_dump {
 	echo "-s and -n override each nother.  Defaults to \"-s oacd_botsdev\""
 	echo "-b defaults to rel/oacd_bots/releases/1/oacd_bots"
 	echo "-nb disables use of a boot file.  -b and -nb override eachother."
-	echo "-f defaults to \"single\""
+	echo "-f defaults to \"default\""
 	echo "-e defaults to \"erl\""
 }
 
@@ -26,7 +26,7 @@ EBIN="ebin"
 COOKIE="oacd_botsDev"
 NAMETYPE="-sname"
 NODENAME="oacd_botsdev"
-CONFIG="single"
+CONFIG="default"
 BOOT="-boot rel/oacd_bots/releases/1/oacd_bots"
 ERL_PATH="erl"
 
@@ -94,6 +94,15 @@ if [ ! -f $CONFIG ] && [ ! -f "${CONFIG}.config" ]; then
 %% If you are comfortable editing erlang application configuration scripts
 %% there is no harm in editing the file.
 [{'oacd_bots', [ ]},
+{lager, [
+	{handlers, [
+		{lager_console_backend, info},
+		{lager_file_backend, [
+			{"debug.log", debug, 0, "\$D0", 5},
+			{"warning.log", warning, 0, "\$D0", 5}
+		]}
+	]}
+]},
 {sasl, [
 	{errlog_type, error} % disable SASL progress reports
 ]}].
