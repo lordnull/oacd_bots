@@ -25,7 +25,8 @@
 
 -record(state, {
 	freeswitch :: atom(),
-	check_timer :: 'undefined' | reference()
+	check_timer :: 'undefined' | reference(),
+	callers = dict:new()
 }).
 
 %% ------------------------------------------------------------------
@@ -33,6 +34,7 @@
 %% ------------------------------------------------------------------
 
 -export([start_link/1, start_link/2]).
+-export([spawn_call/1]).
 
 %% ------------------------------------------------------------------
 %% gen_server Function Exports
@@ -51,6 +53,9 @@ start_link(Freeswitch) ->
 start_link(Freeswitch, Options) ->
   gen_server:start_link({local, ?SERVER}, ?MODULE, {Freeswitch, Options}, []).
 
+spawn_call(TargetNumber) ->
+	gen_server:cast(?SERVER, {spawn_call, TargetNumber}).
+
 %% ==================================================================
 %% gen_server Function Definitions
 %% ==================================================================
@@ -60,6 +65,7 @@ start_link(Freeswitch, Options) ->
 %% ------------------------------------------------------------------
 
 init({Freeswitch, Options}) ->
+	process_flag(trap_exit, true),
 	monitor_node(Freeswitch, true),
 	lager:info("~s started with freeswitch node ~p", [?MODULE, Freeswitch]),
   {ok, #state{freeswitch = Freeswitch}}.
@@ -74,6 +80,14 @@ handle_call(_Request, _From, State) ->
 %% ------------------------------------------------------------------
 %% handle_cast
 %% ------------------------------------------------------------------
+
+handle_cast({spawn_call, TargetNum}, #state{freeswitch = Fsnode} = State) ->
+	{ok, UUID} = freeswitch:api(Fsnode, create_uuid),
+	Opts = [{originate, TargetNum}, {uuid, UUID}],
+	{ok, Pid} = oacd_bots_caller:start_link(Fsnode, Opts),
+	NewDict = dict:store(UUID, Pid, State#state.callers),
+	lager:info("UUID ~s now associated with ~p.", [UUID, Pid]),
+	{noreply, State#state{callers = NewDict}};
 
 handle_cast(_Msg, State) ->
   {noreply, State}.
@@ -93,6 +107,26 @@ handle_info(check_freeswitch, #state{freeswitch = Fsnode} = State) ->
 	end,
 	{noreply, State#state{check_timer = CheckTimer}};
 
+handle_info({get_pid, UUID, Ref, From}, #state{callers = Callers} = State) ->
+	case dict:find(UUID, Callers) of
+		{ok, Pid} ->
+			From ! {Ref, Pid},
+			{noreply, State};
+		error ->
+			StartOpts = [{uuid, UUID}, {originate, false}],
+			case oacd_bots_caller:start_link(State#state.freeswitch, StartOpts) of
+				{ok, Pid} ->
+					From ! {Ref, Pid},
+					NewDict = dict:store(UUID, Pid, Callers),
+					lager:info("~s is now associated with ~p", [UUID, Pid]),
+					{noreply, State#state{callers = NewDict}};
+				Else ->
+					lager:error("~s could not be associated with a pid due to ~p", [UUID, Else]),
+					From ! {Ref, Else},
+					{noreply, State}
+			end
+	end;
+
 handle_info({nodedown, Fsnode}, #state{freeswitch = Fsnode, check_timer = undefined} = State) ->
 	lager:warning("Freeswitch has gone down, checking in 5 seconds"),
 	CheckTimer = erlang:send_after(5000, self(), check_freeswitch),
@@ -102,8 +136,15 @@ handle_info({nodedown, Fsnode}, State) ->
 	lager:debug("Already got a node down notification, ignoring"),
 	{noreply, State};
 
+handle_info({'EXIT', Pid, Reason}, #state{callers = Callers} = State) ->
+	lager:info("~p exited", [Pid]),
+	NewDict = dict:filter(fun(Key, Value) ->
+		Value =/= Pid
+	end, Callers),
+	{noreply, State#state{callers = NewDict}};
 		
-handle_info(_Info, State) ->
+handle_info(Info, State) ->
+	lager:info("da info:  ~p", [Info]),
   {noreply, State}.
 
 %% ------------------------------------------------------------------

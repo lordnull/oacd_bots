@@ -103,9 +103,10 @@ init([Node, Opts]) ->
 			{ok, #state{nodename = Node, uuid = UUID}};
 		{UUID, OriginateTarget} ->
 			OriginateOpts = create_originate_opts(Opts),
-			Dialplan = proplists:get_value(dialplan, Opts, "park()"),
+			Dialplan = proplists:get_value(dialplan, Opts, "'&park()'"),
 			OriginateString = make_originate(OriginateTarget, OriginateOpts, Dialplan),
 			{ok, Bgid} = freeswitch:bgapi(Node, originate, OriginateString),
+			become_handler(Node, UUID),
 			lager:info("Caller for target ~s started with uuid ~s", [OriginateTarget, UUID]),
 			lager:debug("Originate string:  ~s", [OriginateString]),
 			{ok, #state{nodename = Node, uuid = UUID,
@@ -128,9 +129,11 @@ handle_cast(Msg, State) ->
 %% Description: Handling all non call/cast messages
 %%--------------------------------------------------------------------
 
-handle_info({call, {event, [UUID | Rest]}}, State) when is_list(UUID) ->
-	case_event_name([UUID | Rest], State);
-handle_info({call_event, {event, [UUID | Rest]}}, State) when is_list(UUID) ->
+handle_info({call, {event, [UUID | Rest]}}, #state{uuid = UUID} = State) ->
+	freeswitch:session_setevent(State#state.nodename, ['CHANNEL_ANSWER',
+		'CHANNEL_BRIDGE', 'CHANNEL_UNBRIDGE', 'CHANNEL_HANGUP']),
+	{noreply, State};
+handle_info({call_event, {event, [UUID | Rest]}}, #state{uuid = UUID} = State) ->
 	case_event_name([ UUID | Rest], State);
 handle_info({bgok, Reply}, State) ->
 	{noreply, State};
@@ -159,6 +162,20 @@ code_change(_OldVsn, State, _Extra) ->
 %%% Internal functions
 %%--------------------------------------------------------------------
 
+become_handler(Node, UUID) ->
+	become_handler(Node, UUID, 0).
+
+become_handler(Node, UUID, Count) when Count > 10 ->
+	erlang:error(badsession);
+become_handler(Node, UUID, Count) ->
+	case freeswitch:handlecall(Node, UUID) of
+		{error, _} ->
+			timer:sleep(100),
+			become_handler(Node, UUID, Count + 1);
+		_ ->
+			ok
+	end.
+
 create_originate_opts(Opts) ->
 	create_originate_opts(Opts, []).
 
@@ -178,7 +195,7 @@ create_originate_opts([_Head | Tail], Acc) ->
 
 make_originate(Target, Options, Dialplan) ->
 	DialOpts = stringify_dial_opts(Options),
-	DialOpts ++ "loopback/" ++ Target ++ "/default &" ++ Dialplan ++ " inline".
+	DialOpts ++ "loopback/" ++ Target ++ "/default " ++ Dialplan ++ " inline".
 
 stringify_dial_opts(Options) ->
 	stringify_dial_opts(Options, []).
@@ -194,14 +211,15 @@ stringify_dial_opts([{Key, Value} | Tail], Acc) ->
 
 case_event_name([UUID | Rawcall], State) ->
 	Ename = proplists:get_value("Event-Name", Rawcall),
+	lager:debug("handling event ~s", [Ename]),
 	case Ename of
 		"CHANNEL_PARK" when State#state.answered == false ->
 			% answer the mofo!
-			freeswitch:sendmsg(State#state.nodename, UUID,[{"call-command", "execute"},{"execute-app-name", "answer"}]),
-			{noreply, State#state{answered = true}};
+			%freeswitch:sendmsg(State#state.nodename, UUID,[{"call-command", "execute"},{"execute-app-name", "answer"}]),
+			{noreply, State#state{parked = true}};
 		"CHANNEL_ANSWER" when State#state.parked == false ->
 			freeswitch:api(State#state.nodename, uuid_park, UUID),
-			{noreply, State#state{parked = false}};
+			{noreply, State#state{answered = true}};
 		"CHANNEL_PARK" ->
 			freeswitch:sendmsg(State#state.nodename, UUID, [
 				{"call-command", "execute"},
